@@ -1,0 +1,8 @@
+{
+    "tmdb_api_key": "YOUR_TMDB_API_KEY_HERE",
+    "omdb_api_key": "YOUR_OMDB_API_KEY_HERE",
+    "cache_size_mb": 100,
+    "auto_clear_cache": false,
+    "cache_dir": "/tmp/ciefp_cache",
+    "show_imdb_rating": true
+}
