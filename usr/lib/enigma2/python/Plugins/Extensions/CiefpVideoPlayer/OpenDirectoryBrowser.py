@@ -45,12 +45,13 @@ class OpenDirectoryBrowser(Screen):
             <widget name="poster" position="1150,150" size="700,750" alphatest="blend" zPosition="1" />
 
             <widget name="current_path" position="60,910" size="1800,45" font="Regular;28" foregroundColor="#00FF00" backgroundColor="transparent" transparent="1" zPosition="2"/>
-            <widget name="status" position="60,960" size="1800,35" font="Regular;24" foregroundColor="#808080" backgroundColor="transparent" transparent="1" zPosition="2"/>
+            <widget name="status" position="60,950" size="1800,35" font="Regular;24" foregroundColor="#00FF00" backgroundColor="transparent" transparent="1" zPosition="2"/>
 
-            <eLabel text="RED: Exit" position="60,1020" size="200,40" font="Regular;24" foregroundColor="#ff0000" transparent="1" />
-            <eLabel text="GREEN: Play" position="280,1020" size="200,40" font="Regular;24" foregroundColor="#00ff00" transparent="1" />
-            <eLabel text="YELLOW: Movie Info" position="500,1020" size="250,40" font="Regular;24" foregroundColor="#ffff00" transparent="1" />
-            <eLabel text="BLUE: TV Series Info" position="760,1020" size="250,40" font="Regular;24" foregroundColor="#0000ff" transparent="1" />
+            <eLabel position="0,980" size="1920,100" backgroundColor="#1a1a1a" zPosition="1" />
+            <eLabel text="RED: Exit" position="60,1020" size="200,40" font="Regular;24" foregroundColor="#ffffff" backgroundColor="#1a1a1a" transparent="1" zPosition="2" />
+            <eLabel text="GREEN: Play" position="280,1020" size="200,40" font="Regular;24" foregroundColor="#008000" backgroundColor="#1a1a1a" transparent="1" zPosition="2" />
+            <eLabel text="YELLOW: Movie Info" position="500,1020" size="250,40" font="Regular;24" foregroundColor="#FFDE21" backgroundColor="#1a1a1a" transparent="1" zPosition="2" />
+            <eLabel text="BLUE: TV Series Info" position="760,1020" size="250,40" font="Regular;24" foregroundColor="#00a2ff" backgroundColor="#1a1a1a" transparent="1" zPosition="2" />
         </screen>"""
 
     def __init__(self, session, url):
