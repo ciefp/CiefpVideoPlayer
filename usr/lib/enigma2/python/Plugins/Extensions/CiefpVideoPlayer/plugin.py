@@ -8,6 +8,8 @@ import socket
 import threading
 import json
 import ssl
+from Screens.InfoBar import MoviePlayer
+from enigma import eServiceReference
 from urllib.parse import unquote
 from Screens.Screen import Screen
 from Screens.MessageBox import MessageBox
@@ -26,9 +28,10 @@ from twisted.internet import reactor
 # Import naših modula
 from .CiefpSettings import CiefpSettings
 from .TMDBInfoScreen import TMDBInfoScreen
+from .OpenDirectoryBrowser import OpenDirectoryBrowser
 
 # Putanje
-PLUGIN_VERSION = "1.2"
+PLUGIN_VERSION = "1.3"
 PLUGIN_PATH = "/usr/lib/enigma2/python/Plugins/Extensions/CiefpVideoPlayer"
 PLACEHOLDER = os.path.join(PLUGIN_PATH, "background.png")
 GITHUB_URL = "https://github.com/ciefp/CiefpIPTV"
@@ -426,7 +429,7 @@ class CiefpVideoPlayerMain(Screen):
             self.session.open(MessageBox, "Cannot fetch details!", MessageBox.TYPE_ERROR)
             return
 
-        self.session.open(TMDBInfoScreen, details, filename)
+        self.session.open(TMDBInfoScreen, filename, title)
         self["status"].setText("Ready")
 
     # === LOKALNI SADRŽAJ ===
@@ -838,6 +841,7 @@ class CiefpVideoPlayerMain(Screen):
             list=[
                 ("GitHub TV Lists (.tv)", "github_tv"),
                 ("GitHub M3U lists", "github_m3u"),
+                ("Open Directory (Movie/TV Series)", "opendirectory"),  # NOVA OPCIJA
                 ("Manual URL", "manual_url"),
             ]
         )
@@ -850,6 +854,8 @@ class CiefpVideoPlayerMain(Screen):
             self.scanGithubTV()
         elif choice[1] == "github_m3u":
             self.scanGithubM3U()
+        elif choice[1] == "opendirectory":  # NOVA OPCIJA
+            self.openOpenDirectoryBrowser()
         elif choice[1] == "manual_url":
             self.enterManualURL()
     
@@ -1054,6 +1060,74 @@ class CiefpVideoPlayerMain(Screen):
             text="http://"
         )
     
+    def openOpenDirectoryBrowser(self):
+        """Otvara browser za Open Directory"""
+        opendirs_file = os.path.join(PLUGIN_PATH, "opendirectories.txt")
+        addresses = []
+
+        if os.path.exists(opendirs_file):
+            try:
+                with open(opendirs_file, "r") as f:
+                    addresses = [line.strip() for line in f.readlines() if
+                                 line.strip().startswith(('http://', 'https://'))]
+            except:
+                pass
+
+        # Ako nema adresa, ponudi unos
+        if not addresses:
+            self.session.openWithCallback(
+                self.addOpenDirectoryUrl,
+                VirtualKeyBoard,
+                title="Enter Open Directory URL:",
+                text="http://"
+            )
+            return
+
+        # Prikaži listu adresa
+        self.session.openWithCallback(
+            self.openDirectorySelected,
+            ChoiceBox,
+            title="Select Open Directory:",
+            list=[(addr, addr) for addr in addresses] + [("➕ Add New URL", "add_new")]
+        )
+
+    def addOpenDirectoryUrl(self, url):
+        """Dodaje novi URL u opendirectories.txt i otvara ga"""
+        if not url or not url.strip():
+            return
+
+        url = url.strip().rstrip('/') + '/'
+        if not url.startswith(('http://', 'https://')):
+            self.session.open(MessageBox, "Invalid URL! Must start with http:// or https://", MessageBox.TYPE_ERROR)
+            return
+
+        # Sačuvaj u fajl
+        opendirs_file = os.path.join(PLUGIN_PATH, "opendirectories.txt")
+        with open(opendirs_file, "a") as f:
+            f.write(url + "\n")
+
+        # Otvori odmah
+        self.browseOpenDirectory(url)
+
+    def openDirectorySelected(self, choice):
+        """Odabrana adresa iz liste"""
+        if not choice:
+            return
+
+        if choice[1] == "add_new":
+            self.session.openWithCallback(
+                self.addOpenDirectoryUrl,
+                VirtualKeyBoard,
+                title="Enter Open Directory URL:",
+                text="http://"
+            )
+        else:
+            self.browseOpenDirectory(choice[1])
+
+    def browseOpenDirectory(self, url):
+        """Otvara HTTP direktorijum za browsing - NOVI EKRAN"""
+        self.session.open(OpenDirectoryBrowser, url)
+    
     def manualURLEntered(self, url):
         if not url or not url.startswith("http"):
             return
@@ -1105,16 +1179,21 @@ class CiefpVideoPlayerMain(Screen):
                 filename = self["main_list"].getFilename()
                 if filename:
                     self.playVideo(filename, os.path.basename(filename))
-    
+                    
     def playVideo(self, path, name):
-        """Pokreće video player"""
-        self["status"].setText("Playing: " + name)
+        """Pokreće sistemski MoviePlayer"""
+        self["status"].setText("Pokretanje: " + name)
         
-        from enigma import eServiceReference
+        # 4097 je standard za IPTV i većinu MP4 fajlova
+        # Ako primetiš da neki lokalni fajlovi prave problem, možeš koristiti 1 za lokalne
+        service_type = 4097 
         
-        ref = eServiceReference(4097, 0, path)
-        self.session.nav.playService(ref)
-
+        ref = eServiceReference(service_type, 0, path)
+        ref.setName(name) # Ovo postavlja ime koje će pisati u Infobaru
+        
+        # Otvaramo sistemski plejer umesto direktnog puštanja
+        self.session.open(MoviePlayer, ref)
+        
 
 def main(session, **kwargs):
     session.open(CiefpVideoPlayerMain)

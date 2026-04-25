@@ -3,6 +3,7 @@ import os
 import json
 import ssl
 import urllib.request
+import urllib.parse
 from Screens.Screen import Screen
 from Screens.MessageBox import MessageBox
 from Components.ActionMap import ActionMap
@@ -34,16 +35,6 @@ def load_config():
         except:
             return default
     return default
-
-def save_config(config):
-    """Čuva konfiguraciju u config.json"""
-    try:
-        with open(CONFIG_FILE, 'w') as f:
-            json.dump(config, f, indent=4)
-        return True
-    except Exception as e:
-        print(f"[TMDBInfo] Save config error: {e}")
-        return False
 
 def get_cache_dir():
     """Vraća cache folder iz konfiguracije"""
@@ -106,7 +97,7 @@ class TMDBInfoScreen(Screen):
             <widget name="year_runtime" position="600,190" size="1300,40" font="Regular;30" foregroundColor="#D3D3D3" backgroundColor="#1a1a1a" transparent="1" />
             
             <!-- Ocjene -->
-            <widget name="rating_tmdb" position="600,240" size="600,40" font="Regular;30" foregroundColor="#03a81f" backgroundColor="#03a81f" transparent="1" />
+            <widget name="rating_tmdb" position="600,240" size="600,40" font="Regular;30" foregroundColor="#03a81f" backgroundColor="#1a1a1a" transparent="1" />
             <widget name="rating_imdb" position="600,300" size="600,40" font="Regular;30" foregroundColor="#f5c518" backgroundColor="#1a1a1a" transparent="1" />
             
             <!-- Žanrovi -->
@@ -134,14 +125,16 @@ class TMDBInfoScreen(Screen):
         </screen>
     """
     
-    def __init__(self, session, movie_data, filename):
+    def __init__(self, session, filename, search_query=None):
         Screen.__init__(self, session)
         self.session = session
-        self.movie_data = movie_data
         self.filename = filename
+        self.search_query = search_query
         
         # Učitaj konfiguraciju
         self.config = load_config()
+        self.api_key = self.config.get('tmdb_api_key', '')
+        self.movie_data = None
         
         self["poster"] = Pixmap()
         self["title"] = Label("")
@@ -163,13 +156,117 @@ class TMDBInfoScreen(Screen):
             "green": self.close,
         }, -1)
         
-        self.onFirstExecBegin.append(self.loadInfo)
+        # ISPRAVKA: Pozovi startPretraga umjesto loadInfo
+        self.onFirstExecBegin.append(self.startPretraga)
+
+    def startPretraga(self):
+        """Pokreće pretragu TMDB"""
+        print(f"[DEBUG TMDBInfo] startPretraga - filename type: {type(self.filename)}")
+
+        # Ako imamo direktne podatke (dict za filmove ili serije)
+        if self.filename and isinstance(self.filename, dict):
+            # Provjeri da li ima 'title' (film) ili 'name' (serija)
+            if 'title' in self.filename or 'name' in self.filename:
+                print("[DEBUG TMDBInfo] Dobio direktne podatke (dict) - film ili serija")
+                self.movie_data = self.filename
+                self.loadInfo()
+                return
+
+        # Ako je filename string (naziv fajla) - pretraži
+        if isinstance(self.filename, str):
+            print(f"[DEBUG TMDBInfo] filename je string: {self.filename[:50]}...")
+        else:
+            print(f"[DEBUG TMDBInfo] filename je {type(self.filename)} - neocekivano!")
+
+        # Pretraži na osnovu naziva
+        upit = self.search_query if self.search_query else os.path.basename(self.filename)
+        print(f"[DEBUG TMDBInfo] Pretražujem: {upit}")
+
+        if not self.api_key:
+            print("[DEBUG TMDBInfo] NEMA API KLJUCA!")
+            self["status"].setText("No TMDB API Key! Set it in Settings.")
+            self.movie_data = None
+            self.loadInfo()
+            return
+
+        self.searchTMDB(upit)
+
+    def searchTMDB(self, query):
+        """Pretražuje TMDB na osnovu upita"""
+        self["status"].setText(f"Searching TMDB: {query}...")
+        
+        try:
+            # Prvo traži filmove
+            params = {"api_key": self.api_key, "query": query}
+            url = "https://api.themoviedb.org/3/search/movie?" + urllib.parse.urlencode(params)
+            
+            ctx = ssl.create_default_context()
+            ctx.check_hostname = False
+            ctx.verify_mode = ssl.CERT_NONE
+            
+            req = urllib.request.Request(url, headers={'User-Agent': 'Enigma2-CiefpVideoPlayer'})
+            with urllib.request.urlopen(req, context=ctx, timeout=10) as response:
+                data = json.loads(response.read().decode('utf-8', errors='ignore'))
+                results = data.get("results", [])
+                
+                if results:
+                    self.get_details(results[0]['id'], 'movie')
+                    return
+            
+            # Ako nema filma, traži seriju
+            params = {"api_key": self.api_key, "query": query}
+            url = "https://api.themoviedb.org/3/search/tv?" + urllib.parse.urlencode(params)
+            
+            req = urllib.request.Request(url, headers={'User-Agent': 'Enigma2-CiefpVideoPlayer'})
+            with urllib.request.urlopen(req, context=ctx, timeout=10) as response:
+                data = json.loads(response.read().decode('utf-8', errors='ignore'))
+                results = data.get("results", [])
+                
+                if results:
+                    self.get_details(results[0]['id'], 'tv')
+                    return
+            
+            # Ako nema rezultata
+            self["status"].setText("No results found")
+            self.movie_data = None
+            self.loadInfo()
+            
+        except Exception as e:
+            print(f"[TMDBInfo] Search error: {e}")
+            self["status"].setText(f"Search error: {str(e)[:50]}")
+            self.movie_data = None
+            self.loadInfo()
+    
+    def get_details(self, media_id, media_type):
+        """Dohvata detalje o filmu/seriji"""
+        self["status"].setText("Loading details...")
+        
+        try:
+            url = f"https://api.themoviedb.org/3/{media_type}/{media_id}?api_key={self.api_key}&append_to_response=credits"
+            ctx = ssl.create_default_context()
+            ctx.check_hostname = False
+            ctx.verify_mode = ssl.CERT_NONE
+            
+            req = urllib.request.Request(url, headers={'User-Agent': 'Enigma2-CiefpVideoPlayer'})
+            with urllib.request.urlopen(req, context=ctx, timeout=10) as response:
+                self.movie_data = json.loads(response.read().decode('utf-8', errors='ignore'))
+                self.loadInfo()
+                
+        except Exception as e:
+            print(f"[TMDBInfo] Details error: {e}")
+            self["status"].setText("Error loading details")
+            self.movie_data = None
+            self.loadInfo()
     
     def loadInfo(self):
         """Učitava i prikazuje informacije"""
         if not self.movie_data:
-            self["status"].setText("No info available")
-            self["filename"].setText(self.filename[:60])
+            self["status"].setText("No information available")
+            self["filename"].setText(os.path.basename(self.filename)[:60] if isinstance(self.filename, str) else "Unknown")
+            return
+        
+        if not isinstance(self.movie_data, dict):
+            self["status"].setText("Error: Invalid data")
             return
         
         # Naslov i godina
@@ -206,11 +303,9 @@ class TMDBInfoScreen(Screen):
             self["year_runtime"].setText(runtime)
         
         # TMDB ocjena
-        tmdb_rating = ""
         if 'vote_average' in self.movie_data and self.movie_data['vote_average']:
             tmdb_score = self.movie_data['vote_average']
             vote_count = self.movie_data.get('vote_count', 0)
-            # Zvjezdice za TMDB
             stars = "★" * int(round(tmdb_score / 2))
             stars += "☆" * (5 - int(round(tmdb_score / 2)))
             tmdb_rating = f"🎬 TMDB: {stars} {tmdb_score:.1f}/10 ({vote_count} votes)"
@@ -249,7 +344,6 @@ class TMDBInfoScreen(Screen):
         
         # Opis
         overview = self.movie_data.get('overview', 'No description available.')
-        # Ograniči dužinu opisa
         if len(overview) > 600:
             overview = overview[:600] + "..."
         self["overview"].setText(overview)
@@ -260,7 +354,8 @@ class TMDBInfoScreen(Screen):
             self.load_poster(poster_path)
         
         self["status"].setText("Info loaded")
-        self["filename"].setText(os.path.basename(self.filename)[:60])
+        filename_str = os.path.basename(self.filename)[:60] if isinstance(self.filename, str) else "Unknown"
+        self["filename"].setText(filename_str)
     
     def load_poster(self, poster_path):
         """Učitava poster sa TMDB"""

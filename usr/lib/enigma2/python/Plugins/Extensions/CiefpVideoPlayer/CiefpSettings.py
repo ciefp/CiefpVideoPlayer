@@ -599,19 +599,31 @@ class CiefpSettings(Screen):
         self.settings['language'] = choice[1]
         self.save_settings()
         self.session.open(MessageBox, f"Language set to {choice[0]}", MessageBox.TYPE_INFO)
-    
+
     def show_about(self):
         """About screen"""
-        about_text = "CiefpVideoPlayer v1.2\n\n"
-        about_text += "Video Player for Enigma2\n"
-        about_text += "with TMDB Integration\n\n"
-        about_text += "Features:\n"
-        about_text += "• Local video playback\n"
-        about_text += "• Network mounts (SMB/NFS)\n"
-        about_text += "• Online streaming (M3U/TV)\n"
-        about_text += "• TMDB movie/TV info\n"
-        about_text += "• Cache management\n\n"
+        about_text = "CiefpVideoPlayer v1.3\n"
+        about_text += "✨ WHAT'S NEW:\n"
+        about_text += "• Open Directory Browser (HTTP)\n"
+        about_text += "• Full MoviePlayer (Play/Pause/Stop)\n"
+        about_text += "• Resume playback (position memory)\n"
+        about_text += "• TMDB info for TV series (BLUE)\n"
+        about_text += "• Subtitle support\n"
+        about_text += "🎬 FEATURES:\n"
+        about_text += "• Local | Network | Online\n"
+        about_text += "• Open Directory | M3U | .tv\n"
+        about_text += "• TMDB Movie & Series Info\n"
+        about_text += "• Poster caching\n"
+        about_text += "• Cache management\n"
+        about_text += "🎮 CONTROLS:\n"
+        about_text += "• Play/Pause/Stop/Forward/Rewind\n"
+        about_text += "• Resume playback\n"
+        about_text += "• Subtitles & audio tracks\n"
+        about_text += "🔧 Open Directory:\n"
+        about_text += "• YELLOW: Movie info\n"
+        about_text += "• BLUE: TV series info\n"
+        about_text += "• GREEN: Play\n"
         about_text += "GitHub: @ciefp\n"
-        about_text += "Powered by TMDB API"
-        
+        about_text += "Powered by TMDB API & MoviePlayer"
+
         self.session.open(MessageBox, about_text, MessageBox.TYPE_INFO)
