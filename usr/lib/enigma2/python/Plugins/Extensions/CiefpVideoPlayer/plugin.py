@@ -177,10 +177,11 @@ class CiefpVideoPlayerMain(Screen):
             menu_items.append(("Movie Info (TMDB)", "movie"))
             menu_items.append(("TV Show Info (TMDB)", "tv"))
             menu_items.append(("─" * 30, "separator"))
-        
+
         menu_items.append(("Settings", "settings"))
         menu_items.append(("Cache Info", "cache_info"))
-        menu_items.append(("Clear Cache", "clear_cache"))
+        menu_items.append(("Clear Cache (TMP)", "clear_cache"))
+        menu_items.append(("Clear Cache (USB/HDD)", "clear_external_cache"))  # NOVA OPCIJA
         menu_items.append(("About", "about"))
         menu_items.append(("Close", "cancel"))
         
@@ -205,12 +206,14 @@ class CiefpVideoPlayerMain(Screen):
         if action == "settings":
             self.session.open(CiefpSettings)
         elif action == "about":
-            about_text = "CiefpVideoPlayer v1.2\n\nVideo Player with TMDB Info\nLocal | Network | Online\n\n© 2026 Ciefp"
+            about_text = "CiefpVideoPlayer v1.4\n\nVideo Player with TMDB Info\nLocal | Network | Online | FTP Android Phone\n\n© 2026 Ciefp"
             self.session.open(MessageBox, about_text, MessageBox.TYPE_INFO)
         elif action == "cache_info":
             self.show_cache_info()
         elif action == "clear_cache":
             self.clear_cache()
+        elif action == "clear_external_cache":  # DODATO
+            self.clear_external_storage_cache()
         elif action in ("movie", "tv"):
             self.show_tmdb_info(action)
     
@@ -257,6 +260,33 @@ class CiefpVideoPlayerMain(Screen):
             self["status"].setText("Cache cleared")
         except Exception as e:
             self.session.open(MessageBox, f"Error clearing cache:\n{str(e)}", MessageBox.TYPE_ERROR)
+
+    def clear_external_storage_cache(self):
+        """Pretražuje i briše zaostale video i cuts fajlove na eksternim diskovima"""
+        paths_to_check = ["/media/usb/", "/media/hdd/", "/tmp/"]
+        extensions_to_delete = [".cuts", ".ap", ".sc", ".meta", ".reappeard"]
+        deleted_count = 0
+
+        try:
+            for path in paths_to_check:
+                if os.path.exists(path) and os.path.isdir(path):
+                    for filename in os.listdir(path):
+                        # Brišemo zaostale privremene video fajlove
+                        if filename.startswith("video-") and filename.endswith(".mp4"):
+                            os.remove(os.path.join(path, filename))
+                            deleted_count += 1
+
+                        # Brišemo sve pomoćne fajlove (cuts, ap, itd.)
+                        for ext in extensions_to_delete:
+                            if filename.endswith(ext):
+                                os.remove(os.path.join(path, filename))
+                                deleted_count += 1
+
+            self.session.open(MessageBox, f"Cleanup finished!\nRemoved {deleted_count} cache files from USB/HDD.",
+                              MessageBox.TYPE_INFO)
+            self["status"].setText(f"Cleaned {deleted_count} files")
+        except Exception as e:
+            self.session.open(MessageBox, f"Cleanup error: {str(e)}", MessageBox.TYPE_ERROR)
 
     # === TMDB INFO ===
     def parse_filename_for_media(self, filename):
