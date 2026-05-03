@@ -129,41 +129,46 @@ class CiefpFTPBrowser(Screen):
             self.playFtpVideo(name)
 
     def playFtpVideo(self, filename):
-        import os
-        import json
-
-        # 1. Učitavanje limita iz settings-a[cite: 2]
-        tmp_max_size = 50  # Default ako učitavanje ne uspe
-        try:
-            with open("/usr/lib/enigma2/python/Plugins/Extensions/CiefpVideoPlayer/config.json", 'r') as f:
-                config = json.load(f)
-                tmp_max_size = config.get("tmp_max_size_mb", 50)
-        except:
-            pass
-
-        # 2. Provera putanje (Prioritet: USB -> HDD -> TMP)
-        download_folder = "/tmp/"  # Default početna vrednost
-
+        # 1. Provera prioriteta skladištenja (USB -> HDD -> TMP)
+        download_folder = "/tmp/"
         if os.path.exists("/media/usb") and os.path.ismount("/media/usb"):
             download_folder = "/media/usb/"
-            self["status"].setText("Using USB Storage.")
+            self["status"].setText("Downloading to USB...")
         elif os.path.exists("/media/hdd") and os.path.ismount("/media/hdd"):
             download_folder = "/media/hdd/"
-            self["status"].setText("Using HDD Storage.")
+            self["status"].setText("Downloading to HDD...")
         else:
-            # Ako ide u /tmp, proveravamo veličinu fajla pre kopiranja (ako FTP server šalje info)
-            download_folder = "/tmp/"
-            self["status"].setText("No Storage! Using /tmp (Limit: %dMB)" % tmp_max_size)
-            # Napomena: Prava provera veličine se vrši u download thread-u
+            self["status"].setText("No USB/HDD! Downloading to /tmp...")
 
         self.local_file = os.path.join(download_folder, filename)
         self.ftp_path = (self.current_path + "/" + filename).replace("//", "/")
 
-        # Pokretanje download-a
-        import threading
-        thread = threading.Thread(target=self.downloadAndPlay, args=(tmp_max_size,))
+        # 2. Pokretanje download-a u pozadini
+        thread = threading.Thread(target=self.downloadAndPlayTask)
         thread.daemon = True
         thread.start()
+
+    def downloadAndPlayTask(self):
+        try:
+            ftp = FTP()
+            ftp.connect(self.ftp_ip, int(self.ftp_port), timeout=15)
+            ftp.login(self.ftp_user, self.ftp_pass)
+
+            # Dodajemo fajl u listu za čišćenje nakon gledanja
+            if self.local_file not in self.cache_list:
+                self.cache_list.append(self.local_file)
+
+            # Stvarno preuzimanje fajla na izabranu lokaciju
+            with open(self.local_file, 'wb') as f:
+                ftp.retrbinary('RETR ' + self.ftp_path, f.write)
+
+            ftp.quit()
+
+            # Kada je preuzimanje 100% gotovo, pokreni plejer u glavnom thread-u
+            reactor.callFromThread(self.startLocalPlayer)
+
+        except Exception as e:
+            reactor.callFromThread(self.showError, "Download failed: " + str(e))
 
     def downloadAndPlay(self):
         try:
