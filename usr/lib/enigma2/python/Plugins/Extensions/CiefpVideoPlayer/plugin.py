@@ -29,9 +29,11 @@ from twisted.internet import reactor
 from .CiefpSettings import CiefpSettings
 from .TMDBInfoScreen import TMDBInfoScreen
 from .OpenDirectoryBrowser import OpenDirectoryBrowser
+from .CiefpFTPBrowser import CiefpFTPBrowser
 
 # Putanje
-PLUGIN_VERSION = "1.3"
+PLUGIN_NAME = "CiefpVideoPlayer"
+PLUGIN_VERSION = "1.4"
 PLUGIN_PATH = "/usr/lib/enigma2/python/Plugins/Extensions/CiefpVideoPlayer"
 PLACEHOLDER = os.path.join(PLUGIN_PATH, "background.png")
 GITHUB_URL = "https://github.com/ciefp/CiefpIPTV"
@@ -105,8 +107,7 @@ class CiefpVideoPlayerMain(Screen):
         self.session = session
         self.mode = "LOCAL"
         self.current_online_items = []
-        
-        self["main_list"] = FileList("/media/hdd/", showDirectories=True, showFiles=True, matchingPattern="(?i)^.*\.(mp4|mkv|avi|ts|mov)")
+        self["main_list"] = FileList("/media/hdd/", showDirectories=True, showFiles=True, matchingPattern="(?i)^.*\.(mp4|mkv|avi|ts|mov|srt)")
         self["online_list"] = MenuList([])
         self["online_list"].hide()
         
@@ -474,7 +475,8 @@ class CiefpVideoPlayerMain(Screen):
             self.networkMenuSelected,
             ChoiceBox,
             title="Network Options",
-            list=[
+            list=[ 
+			    ("Connect to Phone (Android FTP)", "connect_phone"),
                 ("Connect to Laptop (SMB)", "connect_laptop"),
                 ("Browse Network Shares", "browse_network"),
                 ("Add Network Share", "add_share"),
@@ -486,8 +488,11 @@ class CiefpVideoPlayerMain(Screen):
     def networkMenuSelected(self, choice):
         if not choice:
             return
+			
 
-        if choice[1] == "connect_laptop":
+        if choice[1] == "connect_phone":
+            self.connectToPhone()
+        elif choice[1] == "connect_laptop":
             self.connectToLaptop()
         elif choice[1] == "browse_network":
             self.browseNetworkShares()
@@ -497,6 +502,34 @@ class CiefpVideoPlayerMain(Screen):
             self.disconnectNetwork()
         elif choice[1] == "autoscan":
             self.autoScanNetwork()
+
+# --- FTP PHONE CONNECT SEQUENCER ---
+    def connectToPhone(self):
+        self.session.openWithCallback(self.phoneIpEntered, VirtualKeyBoard, title="Enter your phone's IP address.:", text="192.168.1.")
+
+    def phoneIpEntered(self, ip):
+        if ip:
+            self.phone_ip = ip
+            self.session.openWithCallback(self.phonePortEntered, VirtualKeyBoard, title="Enter the FTP port (Android usually 2121):", text="2121")
+
+    def phonePortEntered(self, port):
+        if port:
+            self.phone_port = port
+            self.session.openWithCallback(self.phoneUserEntered, VirtualKeyBoard, title="Enter FTP username:", text="root")
+
+    def phoneUserEntered(self, user):
+        if user is not None:
+            self.phone_user = user
+            self.session.openWithCallback(self.phonePassEntered, VirtualKeyBoard, title="Enter FTP username:", text="")
+
+    def phonePassEntered(self, password):
+        if password is not None:
+            try:
+                from .CiefpFTPBrowser import CiefpFTPBrowser
+                # Redosled slanja: session (ide automatski), ip, port, user, password
+                self.session.open(CiefpFTPBrowser, self.phone_ip, self.phone_port, self.phone_user, password)
+            except Exception as e:
+                self.session.open(MessageBox, "Error opening: %s" % str(e), MessageBox.TYPE_ERROR)
 
     def connectToLaptop(self):
         self.session.openWithCallback(
@@ -773,63 +806,139 @@ class CiefpVideoPlayerMain(Screen):
         self["status"].setText("Ready")
 
     def autoScanNetwork(self):
-        """Skeniraj mrežu za SMB uređaje"""
-        self["status"].setText("Scanning network for SMB shares...")
-        self.session.open(MessageBox, "Scanning network...\nThis may take up to 60 seconds", MessageBox.TYPE_INFO,
-                          timeout=3)
+        """Skeniranje mreže sa detaljnim logovanjem grešaka"""
+        import socket
+        import threading
+        from twisted.internet import reactor
+
+        self["status"].setText("SMB network scan in progress...")
+        print("[Ciefp Scan] Započinjem skeniranje mreže...")
 
         def scan_job():
             found_devices = []
+            base_ip = ""
             try:
+                # 1. Određivanje lokalnog IP-a
                 s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
                 s.connect(("8.8.8.8", 80))
                 my_ip = s.getsockname()[0]
                 s.close()
                 base_ip = ".".join(my_ip.split(".")[:3]) + "."
-            except:
+                print(f"[Ciefp Scan] Lokalni IP: {my_ip}, Opseg: {base_ip}1-254")
+            except Exception as e:
+                print(f"[Ciefp Scan] Greška pri dobijanju IP-a: {e}")
                 base_ip = "192.168.1."
 
+            # 2. Skeniranje porta 445
             for i in range(1, 255):
                 ip = base_ip + str(i)
                 try:
                     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                    sock.settimeout(0.5)
+                    sock.settimeout(0.3)
                     result = sock.connect_ex((ip, 445))
+
                     if result == 0:
+                        print(f"[Ciefp Scan] PRONAĐEN SMB uređaj na: {ip}")
                         try:
                             hostname = socket.gethostbyaddr(ip)[0]
-                        except:
+                        except Exception as hn_err:
+                            print(f"[Ciefp Scan] Nije moguće dobiti hostname za {ip}: {hn_err}")
                             hostname = ip
                         found_devices.append((hostname, ip))
                     sock.close()
-                except:
+                except Exception as loop_err:
+                    # Ne printamo svaku grešku (većina će biti timeout), samo kritične
                     pass
 
-            from twisted.internet import reactor
-            reactor.callFromThread(self.scan_finished, found_devices)
+            print(f"[Ciefp Scan] Skeniranje završeno. Pronađeno uređaja: {len(found_devices)}")
 
-        thread = threading.Thread(target=scan_job)
-        thread.daemon = True
-        thread.start()
+            # 3. Povratak u glavni thread
+            try:
+                reactor.callFromThread(self.finalizeScan, found_devices)
+            except Exception as reactor_err:
+                print(f"[Ciefp Scan] KRITIČNA GREŠKA: Reactor call failed: {reactor_err}")
 
-    def scan_finished(self, found_devices):
-        if found_devices:
-            choices = [(f"{hostname} ({ip})", ip) for hostname, ip in found_devices]
-            self.session.openWithCallback(
-                self.scannedDeviceSelected,
-                ChoiceBox,
-                title="Found Devices",
-                list=choices
-            )
-        else:
-            self.session.open(MessageBox, "No SMB devices found!", MessageBox.TYPE_INFO)
+        # Pokretanje thread-a
+        try:
+            thread = threading.Thread(target=scan_job)
+            thread.daemon = True
+            thread.start()
+        except Exception as thread_err:
+            print(f"[Ciefp Scan] Greška pri pokretanju thread-a: {thread_err}")
 
-        self["status"].setText("Ready")
+    def finalizeScan(self, found_devices):
+        """Prikaz rezultata - osiguraj da su klase uvezene"""
+        print("[Ciefp Scan] Finalizacija prikaza na ekranu...")
+        try:
+            if found_devices:
+                choices = [("{} ({})".format(hostname, ip), ip) for hostname, ip in found_devices]
+                self.session.openWithCallback(
+                    self.scannedDeviceSelected,
+                    ChoiceBox,
+                    title="Devices found:",
+                    list=choices
+                )
+            else:
+                self.session.open(MessageBox, "Scan complete: No device responded on port 445.",
+                                  MessageBox.TYPE_INFO)
+        except Exception as ui_err:
+            print(f"[Ciefp Scan] UI Greška (finalizeScan): {ui_err}")
+
+        self["status"].setText("Scanning complete.")
 
     def scannedDeviceSelected(self, choice):
+        """Kada se odabere uređaj sa skenera, tražimo unos naziva foldera"""
         if choice:
             self.laptop_ip = choice[1]
-            self.laptopShareNameEntered("")
+            print(f"[Ciefp Scan] Odabran uređaj: {self.laptop_ip}. Otvaram tastaturu za naziv foldera...")
+
+            # Umesto direktnog pokretanja laptopShareNameEntered(""),
+            # sada otvaramo VirtualKeyBoard da korisnik ukuca folder
+            self.session.openWithCallback(
+                self.laptopShareNameEntered,
+                VirtualKeyBoard,
+                title="Enter the name of the shared folder:",
+                text=""
+            )
+
+    def laptopShareNameEntered(self, share_name):
+        """Sada prima share_name sa tastature i pokreće montiranje"""
+        if not hasattr(self, 'laptop_ip') or not self.laptop_ip:
+            self.session.open(MessageBox, "Error: IP address not saved!", MessageBox.TYPE_ERROR)
+            return
+
+        # Ako korisnik nije ništa ukucao, prekidamo da ne bi bilo greške u mount-u
+        if not share_name:
+            self["status"].setText("Connection canceled - folder name not entered.")
+            return
+
+        ip_address = self.laptop_ip
+        print(f"[Ciefp Scan] Pokušaj konekcije na: //{ip_address}/{share_name}")
+
+        # Prikaži status i pokreni mount thread
+        self["status"].setText(f"Connecting to: {ip_address}...")
+
+        def mount_job():
+            # Kreiramo jedinstvenu tačku montiranja na osnovu IP-a i foldera
+            mount_point = os.path.join(NETWORK_MOUNT, f"scan_{share_name}")
+
+            if not os.path.exists(mount_point):
+                try:
+                    os.makedirs(mount_point, exist_ok=True)
+                except Exception as e:
+                    from twisted.internet import reactor
+                    reactor.callFromThread(self.show_mount_error, f"Folder error: {str(e)}")
+                    return
+
+            smb_path = f"//{ip_address}/{share_name}"
+            success = self.mountSMBShare(smb_path, mount_point)
+
+            from twisted.internet import reactor
+            reactor.callFromThread(self.mount_finished, success, mount_point)
+
+        thread = threading.Thread(target=mount_job)
+        thread.daemon = True
+        thread.start()
 
     # === ONLINE MOD ===
     def openOnlineMenu(self):
@@ -1005,9 +1114,9 @@ class CiefpVideoPlayerMain(Screen):
 
             if self.current_online_items:
                 self.displayOnlineList(display_name)
-                self["status"].setText("Pronađeno {} video linkova".format(len(self.current_online_items)))
+                self["status"].setText("{} video links found".format(len(self.current_online_items)))
             else:
-                self.session.open(MessageBox, "Nema video linkova u ovoj listi.", MessageBox.TYPE_WARNING)
+                self.session.open(MessageBox, "There are no video links in this listing.", MessageBox.TYPE_WARNING)
                 self["status"].setText("No videos found")
 
         except Exception as e:
@@ -1179,25 +1288,44 @@ class CiefpVideoPlayerMain(Screen):
                 filename = self["main_list"].getFilename()
                 if filename:
                     self.playVideo(filename, os.path.basename(filename))
-                    
+
     def playVideo(self, path, name):
-        """Pokreće sistemski MoviePlayer"""
-        self["status"].setText("Pokretanje: " + name)
-        
-        # 4097 je standard za IPTV i većinu MP4 fajlova
-        # Ako primetiš da neki lokalni fajlovi prave problem, možeš koristiti 1 za lokalne
-        service_type = 4097 
-        
+        """Pokreće video i automatski priprema titl"""
+        self["status"].setText("Priprema titla i videa...")
+
+        # 1. Putanje za titl
+        video_dir = os.path.dirname(path)
+        video_name_no_ext = os.path.splitext(name)[0]
+        local_srt_link = "/tmp/" + video_name_no_ext + ".srt"
+
+        # 2. Ako je fajl lokalan ili mrežni (nije http/ftp)
+        if not path.startswith(("http", "ftp")):
+            # Tražimo bilo koji .srt fajl u tom folderu
+            try:
+                for f in os.listdir(video_dir):
+                    if f.lower().endswith(".srt"):
+                        # Ako titl sadrži deo imena filma, napravi prečicu u /tmp
+                        if video_name_no_ext[:10].lower() in f.lower():
+                            remote_srt_path = os.path.join(video_dir, f)
+                            # Brišemo stari link ako postoji
+                            if os.path.exists(local_srt_link): os.remove(local_srt_link)
+                            # Pravimo simbolički link (ne zauzima prostor, a plejer ga vidi u /tmp)
+                            os.symlink(remote_srt_path, local_srt_link)
+                            print(f"[Ciefp] Titl povezan preko symlink-a: {f}")
+                            break
+            except:
+                pass
+
+        # 3. Pokretanje plejera
+        service_type = 4097
         ref = eServiceReference(service_type, 0, path)
-        ref.setName(name) # Ovo postavlja ime koje će pisati u Infobaru
-        
-        # Otvaramo sistemski plejer umesto direktnog puštanja
+        ref.setName(name)
         self.session.open(MoviePlayer, ref)
-        
+
 
 def main(session, **kwargs):
     session.open(CiefpVideoPlayerMain)
 
 
 def Plugins(**kwargs):
-    return [PluginDescriptor(name="CiefpVideoPlayer", description="Video Player - Local, Network & Online", where=PluginDescriptor.WHERE_PLUGINMENU, icon="icon.png", fnc=main)]
+    return [PluginDescriptor(name="{} v{}".format(PLUGIN_NAME, PLUGIN_VERSION), description="Video Player - Local, Network & Online", where=PluginDescriptor.WHERE_PLUGINMENU, icon="icon.png", fnc=main)]

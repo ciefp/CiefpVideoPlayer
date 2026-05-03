@@ -56,27 +56,28 @@ class CiefpSettings(Screen):
         }, -1)
         self.menu_items = [
             ("TMDB API Key Setup", "api_key"),
-            ("OMDb API Key Setup", "omdb_api_key"),  # DODAJ OVO
+            ("OMDb API Key Setup", "omdb_api_key"),
             ("Cache Settings", "cache"),
+            ("/tmp Limit Settings", "tmp_limit"),  # <-- DODAJ OVU LINIJU[cite: 2]
             ("Language", "language"),
             ("About", "about"),
             ("Close", "close")
         ]
-
         self.update_menu()
 
         self.onLayoutFinish.append(self.showDefaultImage)
-    
+
     def load_settings(self):
         """Učitava settings iz config.json"""
         default = {
             "tmdb_api_key": "",
             "cache_size_mb": 100,
+            "tmp_max_size_mb": 50,  # <-- DODAJ OVU LINIJU[cite: 2]
             "auto_clear_cache": False,
             "language": "en",
             "cache_dir": DEFAULT_CACHE_DIR
         }
-        
+
         if os.path.exists(CONFIG_FILE):
             try:
                 with open(CONFIG_FILE, 'r') as f:
@@ -128,10 +129,12 @@ class CiefpSettings(Screen):
 
             if action == "api_key":
                 self.api_key_setup()
-            elif action == "omdb_api_key":  # DODAJ OVO
+            elif action == "omdb_api_key":
                 self.omdb_api_key_setup()
             elif action == "cache":
                 self.cache_settings()
+            elif action == "tmp_limit":
+                self.tmp_limit_settings()
             elif action == "language":
                 self.language_settings()
             elif action == "about":
@@ -600,30 +603,36 @@ class CiefpSettings(Screen):
         self.save_settings()
         self.session.open(MessageBox, f"Language set to {choice[0]}", MessageBox.TYPE_INFO)
 
+    def tmp_limit_settings(self):
+        self.session.openWithCallback(
+            self.tmp_limit_entered,
+            VirtualKeyBoard,
+            title="Enter max file size for /tmp (MB):",
+            text=str(self.settings.get('tmp_max_size_mb', 50))
+        )
+
+    def tmp_limit_entered(self, size):
+        if size:
+            try:
+                new_size = int(size)
+                self.settings['tmp_max_size_mb'] = new_size
+                self.save_settings()
+                self.session.open(MessageBox, "Limit saved!", MessageBox.TYPE_INFO)
+            except:
+                self.session.open(MessageBox, "Invalid number!", MessageBox.TYPE_ERROR)
+    
     def show_about(self):
         """About screen"""
-        about_text = "CiefpVideoPlayer v1.3\n"
-        about_text += "✨ WHAT'S NEW:\n"
-        about_text += "• Open Directory Browser (HTTP)\n"
-        about_text += "• Full MoviePlayer (Play/Pause/Stop)\n"
-        about_text += "• Resume playback (position memory)\n"
-        about_text += "• TMDB info for TV series (BLUE)\n"
-        about_text += "• Subtitle support\n"
-        about_text += "🎬 FEATURES:\n"
-        about_text += "• Local | Network | Online\n"
-        about_text += "• Open Directory | M3U | .tv\n"
-        about_text += "• TMDB Movie & Series Info\n"
-        about_text += "• Poster caching\n"
-        about_text += "• Cache management\n"
-        about_text += "🎮 CONTROLS:\n"
-        about_text += "• Play/Pause/Stop/Forward/Rewind\n"
-        about_text += "• Resume playback\n"
-        about_text += "• Subtitles & audio tracks\n"
-        about_text += "🔧 Open Directory:\n"
-        about_text += "• YELLOW: Movie info\n"
-        about_text += "• BLUE: TV series info\n"
-        about_text += "• GREEN: Play\n"
+        about_text = "CiefpVideoPlayer v1.4\n\n"
+        about_text += "Video Player for Enigma2\n"
+        about_text += "with TMDB Integration\n\n"
+        about_text += "Features:\n"
+        about_text += "• Local video playback\n"
+        about_text += "• Network mounts (SMB/NFS)\n"
+        about_text += "• Online streaming (M3U/TV)\n"
+        about_text += "• TMDB movie/TV info\n"
+        about_text += "• Cache management\n\n"
         about_text += "GitHub: @ciefp\n"
-        about_text += "Powered by TMDB API & MoviePlayer"
-
+        about_text += "Powered by TMDB API"
+        
         self.session.open(MessageBox, about_text, MessageBox.TYPE_INFO)

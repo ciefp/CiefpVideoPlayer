@@ -45,13 +45,12 @@ class OpenDirectoryBrowser(Screen):
             <widget name="poster" position="1150,150" size="700,750" alphatest="blend" zPosition="1" />
 
             <widget name="current_path" position="60,910" size="1800,45" font="Regular;28" foregroundColor="#00FF00" backgroundColor="transparent" transparent="1" zPosition="2"/>
-            <widget name="status" position="60,950" size="1800,35" font="Regular;24" foregroundColor="#00FF00" backgroundColor="transparent" transparent="1" zPosition="2"/>
+            <widget name="status" position="60,960" size="1800,35" font="Regular;24" foregroundColor="#808080" backgroundColor="transparent" transparent="1" zPosition="2"/>
 
-            <eLabel position="0,980" size="1920,100" backgroundColor="#1a1a1a" zPosition="1" />
-            <eLabel text="RED: Exit" position="60,1020" size="200,40" font="Regular;24" foregroundColor="#FF0000" backgroundColor="#1a1a1a" transparent="1" zPosition="2" />
-            <eLabel text="GREEN: Play" position="280,1020" size="200,40" font="Regular;24" foregroundColor="#008000" backgroundColor="#1a1a1a" transparent="1" zPosition="2" />
-            <eLabel text="YELLOW: Movie Info" position="500,1020" size="250,40" font="Regular;24" foregroundColor="#FFDE21" backgroundColor="#1a1a1a" transparent="1" zPosition="2" />
-            <eLabel text="BLUE: TV Series Info" position="760,1020" size="250,40" font="Regular;24" foregroundColor="#00a2ff" backgroundColor="#1a1a1a" transparent="1" zPosition="2" />
+            <eLabel text="RED: Exit" position="60,1020" size="200,40" font="Regular;24" foregroundColor="#ff0000" transparent="1" />
+            <eLabel text="GREEN: Play" position="280,1020" size="200,40" font="Regular;24" foregroundColor="#00ff00" transparent="1" />
+            <eLabel text="YELLOW: Movie Info" position="500,1020" size="250,40" font="Regular;24" foregroundColor="#ffff00" transparent="1" />
+            <eLabel text="BLUE: TV Series Info" position="760,1020" size="250,40" font="Regular;24" foregroundColor="#0000ff" transparent="1" />
         </screen>"""
 
     def __init__(self, session, url):
@@ -109,6 +108,7 @@ class OpenDirectoryBrowser(Screen):
         except Exception as e:
             self.fetchError(str(e))
 
+
     def fetchSuccess(self, html):
         html = html.decode('utf-8', 'ignore')
         self.content_items = []
@@ -126,7 +126,7 @@ class OpenDirectoryBrowser(Screen):
             is_folder = link.endswith('/')
             
             # Filtriramo samo video fajlove i foldere
-            if is_folder or link.lower().endswith(('.mp4', '.mkv', '.avi', '.mov', '.ts')):
+            if is_folder or link.lower().endswith(('.mp4', '.mkv', '.avi', '.mov', '.ts', '.srt')):
                 clean_name = urllib.parse.unquote(name).replace('/', '')
                 temp_list.append((clean_name, full_url, is_folder))
         
@@ -168,19 +168,56 @@ class OpenDirectoryBrowser(Screen):
         self.handleOk()
 
     def playVideo(self, url, name):
-        """Pokreće MoviePlayer za video"""
-        self["status"].setText(f"Starting: {name}")
-        
-        if '%' in url:
-            try:
-                url = urllib.parse.unquote(url)
-            except:
-                pass
-                
+        """Pokreće film i forsira Enigmu da potraži titl u /tmp pod istim imenom"""
+        self["status"].setText("Priprema strima i titlova...")
+
+        # 1. Priprema imena - OVO JE KLJUČNO
+        # Uzimamo čisto ime bez ekstenzije (npr. "Film_2024")
+        video_name_no_ext = os.path.splitext(name)[0]
+        # Ciljni titl uvek mora imati ISTO ime kao i ono što šaljemo plejeru u ref.setName
+        target_srt = "/tmp/" + video_name_no_ext + ".srt"
+
+        # 2. Logika skidanja/kopiranja titla
+        titl_spreman = False
+        online_srt_url = url.rsplit('.', 1)[0] + ".srt"
+
+        try:
+            import requests
+            response = requests.get(online_srt_url, timeout=3)
+            if response.status_code == 200:
+                with open(target_srt, "wb") as f:
+                    f.write(response.content)
+                titl_spreman = True
+        except:
+            pass
+
+        if not titl_spreman:
+            # Ako tvoj plugin skida titl kao 'prevod.srt', kopiraj ga u ime filma
+            for source in ["/tmp/prevod.srt", "/tmp/titl.srt", "/tmp/sub.srt"]:
+                if os.path.exists(source):
+                    import shutil
+                    if os.path.exists(target_srt): os.remove(target_srt)
+                    shutil.copy2(source, target_srt)
+                    titl_spreman = True
+                    break
+
+        # 3. Kreiranje eServiceReference
+        # Koristimo 4097 (GStreamer)
         ref = eServiceReference(4097, 0, url)
-        ref.setName(name)
+
+        # OVO JE NAJBITNIJI DEO:
+        # setName postavlja 'prijateljsko ime' servisa.
+        # Enigma traži /tmp/[setName].srt čim se plejer otvori.
+        ref.setName(video_name_no_ext)
+
+        # 4. Pokretanje plejera
         from Screens.InfoBar import MoviePlayer
         self.session.open(MoviePlayer, ref)
+
+        if titl_spreman:
+            self["status"].setText("Film pokrenut. Pritisnite TEXT za izbor titla.")
+        else:
+            self["status"].setText("Film pokrenut (titl nije pronađen).")
 
     # ==================== TMDB INFO FUNKCIJE ====================
     
