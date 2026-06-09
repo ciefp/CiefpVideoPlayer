@@ -3,7 +3,9 @@ http://23.147.64.113/movies/Anime%20Movies/
 http://23.147.64.113/movies/Shitty%20CAMs/
 http://23.147.64.113/tv/Other/
 http://23.147.64.113/tv/Anime/
+http://212.200.115.2:8012/filmovi/
 http://45.88.8.27
+http://5.135.165.24/files/
 http://ftp.ctgfun.com/English/
 http://ftp.ctgfun.com/Others/
 http://ftp.ctgfun.com/Others/European%20Movies/
@@ -62,3 +64,4 @@ http://196.43.147.30:9009
 https://filmes.walkis.com.br
 https://dl.mohsentaleb.com
 https://www.squarebirds.org/users/Billy/
+http://104.251.123.41

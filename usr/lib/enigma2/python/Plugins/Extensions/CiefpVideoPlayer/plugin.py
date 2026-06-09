@@ -30,10 +30,11 @@ from .CiefpSettings import CiefpSettings
 from .TMDBInfoScreen import TMDBInfoScreen
 from .OpenDirectoryBrowser import OpenDirectoryBrowser
 from .CiefpFTPBrowser import CiefpFTPBrowser
+from .WebcamPlayer import WebcamPlayer
 
 # Putanje
 PLUGIN_NAME = "CiefpVideoPlayer"
-PLUGIN_VERSION = "1.4"
+PLUGIN_VERSION = "1.5"
 PLUGIN_PATH = "/usr/lib/enigma2/python/Plugins/Extensions/CiefpVideoPlayer"
 PLACEHOLDER = os.path.join(PLUGIN_PATH, "background.png")
 GITHUB_URL = "https://github.com/ciefp/CiefpIPTV"
@@ -154,6 +155,14 @@ class CiefpVideoPlayerMain(Screen):
         else:
             self["main_list"].down()
 
+    def openWebcamPlayer(self, bouquet_file, bouquet_name):
+        """Otvara WebcamPlayer za dati bouquet"""
+        try:
+            from .WebcamPlayer import WebcamPlayer
+            self.session.open(WebcamPlayer, bouquet_file, bouquet_name)
+        except Exception as e:
+            self.session.open(MessageBox, f"Error opening WebcamPlayer: {str(e)}", MessageBox.TYPE_ERROR)
+
     # === GLAVNI MENI ===
     def showInfoMenu(self):
         """Prikazuje glavni MENU"""
@@ -206,7 +215,7 @@ class CiefpVideoPlayerMain(Screen):
         if action == "settings":
             self.session.open(CiefpSettings)
         elif action == "about":
-            about_text = "CiefpVideoPlayer v1.4\n\nVideo Player with TMDB Info\nLocal | Network | Online | FTP Android Phone\n\n© 2026 Ciefp"
+            about_text = "CiefpVideoPlayer v1.5\n\nVideo Player with TMDB Info\nLocal | Network | Online | FTP Android Phone\n\n© 2026 Ciefp"
             self.session.open(MessageBox, about_text, MessageBox.TYPE_INFO)
         elif action == "cache_info":
             self.show_cache_info()
@@ -475,12 +484,15 @@ class CiefpVideoPlayerMain(Screen):
         self.session.openWithCallback(
             self.browserLocationSelected,
             ChoiceBox,
-            title="Izaberi lokaciju:",
+            title="Choose a location:",
             list=[
                 ("HDD", "/media/hdd"),
+                ("MEDIA", "/media"),
                 ("USB", "/media/usb"),
                 ("USB2", "/media/usb2"),
                 ("Root", "/"),
+                ("Userbouquets (IPTV Lists)", "userbouquets"),
+                ("🎥 Webcam Player", "webcam_player"),  # NOVA OPCIJA
                 ("Network (Laptop)", "network_manual")
             ]
         )
@@ -489,6 +501,10 @@ class CiefpVideoPlayerMain(Screen):
         if choice:
             if choice[1] == "network_manual":
                 self.openNetworkMenu()
+            elif choice[1] == "userbouquets":
+                self.openUserbouquetBrowser()
+            elif choice[1] == "webcam_player":  # NOVA OPCIJA
+                self.openWebcamPlayerMenu()
             else:
                 self.loadFolderContent(choice[1])
 
@@ -498,6 +514,142 @@ class CiefpVideoPlayerMain(Screen):
         self["main_list"].show()
         self["main_list"].changeDir(path)
         self["selection_info"].setText("Mreža: " + os.path.basename(path))
+
+    def openUserbouquetBrowser(self):
+        """Prikazuje samo userbouquet.ciefpsettings fajlove iz /etc/enigma2"""
+        enigma2_dir = "/etc/enigma2"
+
+        if not os.path.exists(enigma2_dir):
+            self.session.open(MessageBox, "Directory /etc/enigma2 not found!", MessageBox.TYPE_ERROR)
+            return
+
+        # Pronađi sve relevantne fajlove
+        bouquet_files = []
+        try:
+            for filename in os.listdir(enigma2_dir):
+                if filename.endswith(".tv"):
+                    # Prvo grupiši po tipu
+                    if filename.startswith("userbouquet.ciefpsettings"):
+                        # CiefpSettings buketi
+                        name_part = filename.replace("userbouquet.", "").replace(".tv", "")
+                        display_name = name_part.replace("_", " ").title()
+                        bouquet_files.append(("🔷 " + display_name, filename, "normal"))
+
+                    elif filename.startswith("userbouquet.web_cam") or "webcam" in filename.lower():
+                        # Webcam buketi
+                        name_part = filename.replace("userbouquet.", "").replace(".tv", "")
+                        display_name = name_part.replace("_", " ").title()
+                        bouquet_files.append(("🎥 " + display_name, filename, "webcam"))
+
+        except Exception as e:
+            print(f"[Ciefp] Error reading /etc/enigma2: {e}")
+
+        if not bouquet_files:
+            self.session.open(MessageBox,
+                              "No bouquet files found!\n\nExpected:\n- userbouquet.ciefpsettings_*.tv\n- userbouquet.web_cam_*.tv",
+                              MessageBox.TYPE_INFO)
+            return
+
+        # Sortiraj
+        bouquet_files.sort(key=lambda x: x[0])
+
+        # Prikaži listu
+        choices = [(f[0], (f[1], f[2])) for f in bouquet_files]
+        self.session.openWithCallback(
+            self.userbouquetSelected,
+            ChoiceBox,
+            title="Select IPTV Bouquet:",
+            list=choices
+        )
+
+    def userbouquetSelected(self, choice):
+        """Kada korisnik izabere bouquet, učitaj ga"""
+        if not choice:
+            return
+
+        filename, bouquet_type = choice[1]  # (filename, type)
+        filepath = os.path.join("/etc/enigma2", filename)
+
+        if not os.path.exists(filepath):
+            self.session.open(MessageBox, f"File not found: {filename}", MessageBox.TYPE_ERROR)
+            return
+
+        name_part = filename.replace("userbouquet.", "").replace(".tv", "").replace("_", " ").title()
+
+        # Ako je webcam bouquet, otvori WebcamPlayer
+        if bouquet_type == "webcam":
+            self.openWebcamPlayer(filepath, name_part)
+        else:
+            # Normalno parsiranje za CiefpSettings bukete
+            self["status"].setText(f"Loading {name_part}...")
+            self.parseTVFile(filepath, name_part)
+
+    def openWebcamPlayerMenu(self):
+        """Otvara meni za izbor webcam buketa"""
+        enigma2_dir = "/etc/enigma2"
+
+        if not os.path.exists(enigma2_dir):
+            self.session.open(MessageBox, "Directory /etc/enigma2 not found!", MessageBox.TYPE_ERROR)
+            return
+
+        # Pronađi samo webcam bukete
+        webcam_files = []
+        try:
+            for filename in os.listdir(enigma2_dir):
+                if filename.endswith(".tv"):
+                    # Tražimo webcam bukete (različiti pattern-i)
+                    if (filename.startswith("userbouquet.web_cam") or
+                            "webcam" in filename.lower() or
+                            "prenj" in filename.lower()):
+                        name_part = filename.replace("userbouquet.", "").replace(".tv", "")
+                        display_name = name_part.replace("_", " ").title()
+                        webcam_files.append((display_name, filename))
+
+        except Exception as e:
+            print(f"[Ciefp] Error reading webcam files: {e}")
+
+        if not webcam_files:
+            self.session.open(MessageBox,
+                              "No webcam bouquets found!\n\nExpected files like:\n- userbouquet.web_cam_*.tv\n- userbouquet.ciefpsettings_iptv_webcam.tv\n- userbouquet.*prenj*.tv",
+                              MessageBox.TYPE_INFO)
+            return
+
+        # Sortiraj
+        webcam_files.sort(key=lambda x: x[0])
+
+        # Prikaži listu za izbor
+        choices = [(f"🎥 {f[0]}", f[1]) for f in webcam_files]
+        self.session.openWithCallback(
+            self.webcamPlayerSelected,
+            ChoiceBox,
+            title="Select Webcam Bouquet:",
+            list=choices
+        )
+
+    def webcamPlayerSelected(self, choice):
+        """Kada korisnik izabere webcam bouquet"""
+        if not choice:
+            return
+
+        filename = choice[1]
+        filepath = os.path.join("/etc/enigma2", filename)
+
+        if not os.path.exists(filepath):
+            self.session.open(MessageBox, f"File not found: {filename}", MessageBox.TYPE_ERROR)
+            return
+
+        name_part = filename.replace("userbouquet.", "").replace(".tv", "").replace("_", " ").title()
+
+        # Otvori WebcamPlayer
+        self.session.open(WebcamPlayer, filepath, name_part)
+
+    def openWebcamPlayer(self, bouquet_file, bouquet_name):
+        """Otvara WebcamPlayer za dati bouquet"""
+        try:
+            from .WebcamPlayer import WebcamPlayer
+            self.session.open(WebcamPlayer, bouquet_file, bouquet_name)
+        except Exception as e:
+            self.session.open(MessageBox, f"Error opening WebcamPlayer: {str(e)}", MessageBox.TYPE_ERROR)
 
     # === MREŽNI SADRŽAJ ===
     def openNetworkMenu(self):

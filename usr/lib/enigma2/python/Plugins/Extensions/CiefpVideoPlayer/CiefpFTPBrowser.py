@@ -218,25 +218,30 @@ class CiefpFTPBrowser(Screen):
     def cleanCache(self):
         try:
             import os
+            # Prolazimo kroz listu svih fajlova koje je plugin dotakao
             for f in self.cache_list:
+                # 1. Brisanje glavnog video fajla
                 if os.path.exists(f):
-                    # Brisanje glavnog video fajla
                     os.remove(f)
+                    print("[Ciefp FTP] Deleted main file: %s" % f)
 
-                    # Brisanje pratećih Enigma2 fajlova koji prljaju USB/TMP
-                    base_name = os.path.splitext(f)[0]
-                    extensions_to_clean = [".cuts", ".ap", ".sc", ".meta"]
+                # 2. Agresivno čišćenje svih Enigma2 pomoćnih fajlova (.cuts, .ap, .sc, .meta)
+                base_name = os.path.splitext(f)[0]
+                extensions_to_clean = [".cuts", ".ap", ".sc", ".meta", ".reappeard"]
 
-                    for ext in extensions_to_clean:
-                        extra_file = base_name + ext
-                        if os.path.exists(extra_file):
+                for ext in extensions_to_clean:
+                    extra_file = base_name + ext
+                    if os.path.exists(extra_file):
+                        try:
                             os.remove(extra_file)
+                            print("[Ciefp FTP] Deleted extra file: %s" % extra_file)
+                        except Exception as e:
+                            print("[Ciefp FTP] Failed to delete %s: %s" % (ext, str(e)))
 
             # Resetovanje liste nakon čišćenja
             self.cache_list = []
         except Exception as e:
-            print
-            "[Ciefp FTP] Cache clean error: %s" % str(e)
+            print("[Ciefp FTP] Cache clean error: %s" % str(e))
 
     def up(self):
         self["filelist"].up()
