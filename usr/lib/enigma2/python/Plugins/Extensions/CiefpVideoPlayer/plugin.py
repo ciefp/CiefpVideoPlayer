@@ -34,7 +34,7 @@ from .WebcamPlayer import WebcamPlayer
 
 # Putanje
 PLUGIN_NAME = "CiefpVideoPlayer"
-PLUGIN_VERSION = "1.5"
+PLUGIN_VERSION = "1.6"
 PLUGIN_PATH = "/usr/lib/enigma2/python/Plugins/Extensions/CiefpVideoPlayer"
 PLACEHOLDER = os.path.join(PLUGIN_PATH, "background.png")
 GITHUB_URL = "https://github.com/ciefp/CiefpIPTV"
@@ -516,41 +516,51 @@ class CiefpVideoPlayerMain(Screen):
         self["selection_info"].setText("Mreža: " + os.path.basename(path))
 
     def openUserbouquetBrowser(self):
-        """Prikazuje samo userbouquet.ciefpsettings fajlove iz /etc/enigma2"""
+        """Prikazuje userbouquet fajlove: ciefpsettings, webcam i one sa IPTV u nazivu"""
         enigma2_dir = "/etc/enigma2"
-
         if not os.path.exists(enigma2_dir):
             self.session.open(MessageBox, "Directory /etc/enigma2 not found!", MessageBox.TYPE_ERROR)
             return
 
-        # Pronađi sve relevantne fajlove
         bouquet_files = []
         try:
             for filename in os.listdir(enigma2_dir):
-                if filename.endswith(".tv"):
-                    # Prvo grupiši po tipu
-                    if filename.startswith("userbouquet.ciefpsettings"):
-                        # CiefpSettings buketi
-                        name_part = filename.replace("userbouquet.", "").replace(".tv", "")
-                        display_name = name_part.replace("_", " ").title()
-                        bouquet_files.append(("🔷 " + display_name, filename, "normal"))
+                if not filename.endswith(".tv"):
+                    continue
 
-                    elif filename.startswith("userbouquet.web_cam") or "webcam" in filename.lower():
-                        # Webcam buketi
-                        name_part = filename.replace("userbouquet.", "").replace(".tv", "")
-                        display_name = name_part.replace("_", " ").title()
-                        bouquet_files.append(("🎥 " + display_name, filename, "webcam"))
+                # Postojeća logika
+                if filename.startswith("userbouquet.ciefpsettings"):
+                    # CiefpSettings buketi
+                    name_part = filename.replace("userbouquet.", "").replace(".tv", "")
+                    display_name = name_part.replace("_", " ").title()
+                    bouquet_files.append(("🔷 " + display_name, filename, "normal"))
+
+                elif filename.startswith("userbouquet.web_cam") or "webcam" in filename.lower():
+                    # Webcam buketi
+                    name_part = filename.replace("userbouquet.", "").replace(".tv", "")
+                    display_name = name_part.replace("_", " ").title()
+                    bouquet_files.append(("🎥 " + display_name, filename, "webcam"))
+
+                # === NOVA LOGIKA ===
+                elif "IPTV" in filename.upper():
+                    # IPTV buketi
+                    name_part = filename.replace("userbouquet.", "").replace(".tv", "")
+                    display_name = name_part.replace("_", " ").title()
+                    bouquet_files.append(("📺 " + display_name, filename, "iptv"))
 
         except Exception as e:
             print(f"[Ciefp] Error reading /etc/enigma2: {e}")
 
         if not bouquet_files:
             self.session.open(MessageBox,
-                              "No bouquet files found!\n\nExpected:\n- userbouquet.ciefpsettings_*.tv\n- userbouquet.web_cam_*.tv",
+                              "No bouquet files found!\n\nExpected:\n"
+                              "- userbouquet.ciefpsettings_*.tv\n"
+                              "- userbouquet.web_cam_*.tv\n"
+                              "- *IPTV*.tv",
                               MessageBox.TYPE_INFO)
             return
 
-        # Sortiraj
+        # Sortiraj po imenu
         bouquet_files.sort(key=lambda x: x[0])
 
         # Prikaži listu
@@ -576,11 +586,14 @@ class CiefpVideoPlayerMain(Screen):
 
         name_part = filename.replace("userbouquet.", "").replace(".tv", "").replace("_", " ").title()
 
-        # Ako je webcam bouquet, otvori WebcamPlayer
         if bouquet_type == "webcam":
             self.openWebcamPlayer(filepath, name_part)
+        elif bouquet_type == "iptv":
+            # IPTV buketi se tretiraju kao normalni (isti parser)
+            self["status"].setText(f"Loading {name_part}...")
+            self.parseTVFile(filepath, name_part)
         else:
-            # Normalno parsiranje za CiefpSettings bukete
+            # Normalni ciefpsettings
             self["status"].setText(f"Loading {name_part}...")
             self.parseTVFile(filepath, name_part)
 
@@ -1251,7 +1264,7 @@ class CiefpVideoPlayerMain(Screen):
             self.session.open(MessageBox, "Download error: " + str(e), MessageBox.TYPE_ERROR)
 
     def parseTVFile(self, filepath, display_name):
-        """Parsira Enigma2 .tv bouquet fajl"""
+        """Parsira Enigma2 .tv bouquet fajl - poboljšana podrška za IPTV linkove"""
         try:
             with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
                 lines = [line.strip() for line in f.readlines()]
@@ -1263,47 +1276,53 @@ class CiefpVideoPlayerMain(Screen):
                 line = lines[i]
 
                 if line.startswith("#SERVICE 4097:") or line.startswith("#SERVICE 1:"):
-                    last_colon = line.rfind(':')
-                    second_last_colon = line.rfind(':', 0, last_colon - 1)
-                    
-                    url = ""
-                    if second_last_colon != -1:
-                        raw_url = line[second_last_colon + 1:last_colon]
-                        url = raw_url.replace("%3a", ":").replace("%2f", "/")
-                        url = url.replace("%3f", "?").replace("%3d", "=").replace("%26", "&")
-                    
+                    # === POBOLJŠANA EKSTRAKCIJA URL-a ===
+                    # Tražimo poslednji http/https deo
+                    url_match = re.search(r'(http[s]?://[^\s]+)', line)
+                    if url_match:
+                        url = url_match.group(1)
+                    else:
+                        # fallback - stari način
+                        parts = line.split(':', 10)  # veći broj da uhvati duge linije
+                        if len(parts) > 10:
+                            raw_url = parts[-1] if parts[-1] else parts[-2]
+                            url = raw_url.replace("%3a", ":").replace("%2f", "/") \
+                                .replace("%3f", "?").replace("%3d", "=") \
+                                .replace("%26", "&").replace("%3A", ":")
+                        else:
+                            url = ""
+
                     name = "Nepoznato"
-                    
+
                     if i + 1 < len(lines) and lines[i + 1].startswith("#DESCRIPTION"):
                         desc_line = lines[i + 1]
                         name = desc_line[13:].strip()
                         try:
-                            from urllib.parse import unquote
                             name = unquote(name)
                         except:
-                            name = name.replace("%20", " ")
+                            name = name.replace("%20", " ").replace("%2B", "+")
                         i += 1
-                    
+
                     if url:
                         self.current_online_items.append({
                             "name": name,
                             "path": url,
                             "type": "online",
-                            "info": "VIDEO"
+                            "info": "IPTV"
                         })
-                
+
                 i += 1
 
             if self.current_online_items:
                 self.displayOnlineList(display_name)
-                self["status"].setText("{} video links found".format(len(self.current_online_items)))
+                self["status"].setText(f"{len(self.current_online_items)} IPTV linkova učitano")
             else:
-                self.session.open(MessageBox, "There are no video links in this listing.", MessageBox.TYPE_WARNING)
+                self.session.open(MessageBox, "Nema pronađenih video linkova u ovom buketu.", MessageBox.TYPE_WARNING)
                 self["status"].setText("No videos found")
 
         except Exception as e:
-            print("[CiefpVideoPlayer] Parse error:", e)
-            self.session.open(MessageBox, "Error parsing file: " + str(e), MessageBox.TYPE_ERROR)
+            print("[CiefpVideoPlayer] ParseTVFile error:", e)
+            self.session.open(MessageBox, f"Greška pri parsiranju fajla:\n{str(e)}", MessageBox.TYPE_ERROR)
 
     def parseM3UFile(self, filepath, display_name):
         """Parsira M3U playlist fajl"""
