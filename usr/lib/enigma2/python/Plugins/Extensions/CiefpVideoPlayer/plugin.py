@@ -34,7 +34,7 @@ from .WebcamPlayer import WebcamPlayer
 
 # Putanje
 PLUGIN_NAME = "CiefpVideoPlayer"
-PLUGIN_VERSION = "1.6"
+PLUGIN_VERSION = "1.7"
 PLUGIN_PATH = "/usr/lib/enigma2/python/Plugins/Extensions/CiefpVideoPlayer"
 PLACEHOLDER = os.path.join(PLUGIN_PATH, "background.png")
 GITHUB_URL = "https://github.com/ciefp/CiefpIPTV"
@@ -79,7 +79,7 @@ class CiefpVideoPlayerMain(Screen):
         <screen position="0,0" size="1920,1080" title="CiefpVideoPlayer FHD" backgroundColor="#00240e" flags="wfNoBorder">
             <eLabel position="0,0" size="1920,100" backgroundColor="#1a1a1a" zPosition="-1" />
             <eLabel text="..:: CiefpVideoPlayer ::.." position="60,25" size="600,50" font="Regular;40" foregroundColor="#ffffff" backgroundColor="#1a1a1a" transparent="1" />
-            
+            <widget name="separator0" position="0,100" size="1920,3" backgroundColor="#d5fa02" zPosition="1" />  
             <widget name="main_list" position="60,150" size="1000,750" scrollbarMode="showAlways" itemHeight="50" font="Regular;32" transparent="1" />
             <widget name="online_list" position="60,150" size="1000,750" scrollbarMode="showAlways" itemHeight="50" font="Regular;32" transparent="1" />
             
@@ -88,7 +88,7 @@ class CiefpVideoPlayerMain(Screen):
 
             <widget name="poster_placeholder" position="1150,150" size="700,750" alphatest="blend" zPosition="1" />
             <widget name="selection_info" position="1150,910" size="700,50" font="Regular;30" halign="center" foregroundColor="#00FF00" transparent="1" />
-            
+            <widget name="separator1" position="0,977" size="1920,3" backgroundColor="#d5fa02" zPosition="1" />  
             <eLabel position="0,980" size="1920,100" backgroundColor="#1a1a1a" zPosition="1" />
             <eLabel position="60,1015" size="30,30" backgroundColor="red" zPosition="2" />
             <eLabel text="Exit" position="105,1010" size="150,40" font="Regular;30" foregroundColor="#ffffff" backgroundColor="#1a1a1a" transparent="1" zPosition="2" />
@@ -116,7 +116,13 @@ class CiefpVideoPlayerMain(Screen):
         self["time"] = Label("")
         self["poster_placeholder"] = Pixmap()
         self["selection_info"] = Label("Local Storage")
-        
+
+        # Separatori
+        self["separator0"] = Label()
+        self["separator1"] = Label()
+        self["separator2"] = Label()
+        self["separator3"] = Label()
+
         self["actions"] = ActionMap(["OkCancelActions", "ColorActions", "DirectionActions", "MenuActions"], {
             "ok": self.handleOk,
             "cancel": self.close,
@@ -1264,7 +1270,7 @@ class CiefpVideoPlayerMain(Screen):
             self.session.open(MessageBox, "Download error: " + str(e), MessageBox.TYPE_ERROR)
 
     def parseTVFile(self, filepath, display_name):
-        """Parsira Enigma2 .tv bouquet fajl - poboljšana podrška za IPTV linkove"""
+        """Univerzalni parser za Enigma2 .tv bukete - podržava sve varijante linkova"""
         try:
             with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
                 lines = [line.strip() for line in f.readlines()]
@@ -1276,52 +1282,192 @@ class CiefpVideoPlayerMain(Screen):
                 line = lines[i]
 
                 if line.startswith("#SERVICE 4097:") or line.startswith("#SERVICE 1:"):
-                    # === POBOLJŠANA EKSTRAKCIJA URL-a ===
-                    # Tražimo poslednji http/https deo
-                    url_match = re.search(r'(http[s]?://[^\s]+)', line)
-                    if url_match:
-                        url = url_match.group(1)
-                    else:
-                        # fallback - stari način
-                        parts = line.split(':', 10)  # veći broj da uhvati duge linije
-                        if len(parts) > 10:
-                            raw_url = parts[-1] if parts[-1] else parts[-2]
-                            url = raw_url.replace("%3a", ":").replace("%2f", "/") \
-                                .replace("%3f", "?").replace("%3d", "=") \
-                                .replace("%26", "&").replace("%3A", ":")
-                        else:
-                            url = ""
-
+                    url = ""
                     name = "Nepoznato"
 
+                    # === 1. IZVADI SVE POSLE 10. DVOTAČKE ===
+                    parts = line.split(':', 10)
+                    if len(parts) > 10:
+                        raw_part = ':'.join(parts[10:])  # Ovo je sve nakon 10. dvotačke
+
+                        # === 2. DEKODIRAJ CEO STRING ===
+                        decoded = urllib.parse.unquote(raw_part)
+
+                        # === 3. TRAŽI URL - NOVA LOGIKA ===
+                        # Prvo probaj da nađeš http:// ili https://
+                        http_pos = decoded.find('http://')
+                        if http_pos == -1:
+                            http_pos = decoded.find('https://')
+
+                        if http_pos != -1:
+                            # Uzmi od http do kraja
+                            temp = decoded[http_pos:]
+
+                            # === PROVERI DA LI IMA : NA KRAJU (SEPARATOR ZA NAZIV) ===
+                            # Traži : koji nije deo porta (nije :brojevi)
+                            # i koji nije u okviru URL-a (nema / posle)
+
+                            # Prvo proveri da li postoji : koji nije deo ://
+                            colon_pos = temp.find(':', temp.find('://') + 3)
+
+                            if colon_pos != -1:
+                                # Proveri da li je ovo port (posle : su brojevi)
+                                after_colon = temp[colon_pos + 1:]
+
+                                # Ako posle : ima brojeva i to je port
+                                if after_colon and after_colon[0].isdigit():
+                                    # Ovo je port, ali proveri da li ima još : posle
+                                    next_colon = temp.find(':', colon_pos + 1)
+                                    if next_colon != -1:
+                                        # Ima još :, verovatno separator za naziv
+                                        # Proveri da li posle drugog : ima / (to bi bio deo URL-a)
+                                        if next_colon + 1 < len(temp) and temp[next_colon + 1] != '/':
+                                            # Ovo je separator, uzmi URL do ovog :
+                                            url = temp[:next_colon]
+                                            # Ostatak je naziv (ako nije prazan)
+                                            rest = temp[next_colon + 1:].strip()
+                                            if rest and (not name or name == "Nepoznato"):
+                                                name = rest
+                                        else:
+                                            # Drugi : je deo URL-a (npr. http://user:pass@...)
+                                            url = temp
+                                    else:
+                                        # Samo jedan :, to je port, uzmi ceo URL
+                                        url = temp
+                                else:
+                                    # Ovo nije port, verovatno je separator za naziv
+                                    # Ako posle : nema /, to je separator
+                                    if after_colon and not after_colon.startswith('/'):
+                                        url = temp[:colon_pos]
+                                        rest = after_colon.strip()
+                                        if rest and (not name or name == "Nepoznato"):
+                                            name = rest
+                                    else:
+                                        # : je deo URL-a (npr. http://user:pass@...)
+                                        url = temp
+                            else:
+                                # Nema : posle protokola, ceo string je URL
+                                url = temp
+                        else:
+                            # === 4. FALLBACK: POKUŠAJ REGEX ===
+                            url_match = re.search(r'(https?://[^\s]+)', decoded)
+                            if url_match:
+                                potential_url = url_match.group(1)
+                                # Proveri da li ima : na kraju
+                                if ':' in potential_url:
+                                    # Nađi poslednji :
+                                    last_colon = potential_url.rfind(':')
+                                    if last_colon != -1:
+                                        # Proveri da li je to port
+                                        after = potential_url[last_colon + 1:]
+                                        if after and after[0].isdigit():
+                                            url = potential_url
+                                        else:
+                                            url = potential_url[:last_colon]
+                                            if after and (not name or name == "Nepoznato"):
+                                                name = after
+                                else:
+                                    url = potential_url
+                            else:
+                                url = decoded
+
+                        # === 5. ČIŠĆENJE URL-A ===
+                        if url:
+                            # Ukloni višestruke :
+                            url = url.strip()
+                            # Ukloni navodnike
+                            url = url.strip('"\'')
+                            # Ukloni zagrade na kraju
+                            url = re.sub(r'[\s\)\]\}]+$', '', url)
+
+                            # Ako URL završava sa :, ukloni ga
+                            while url.endswith(':'):
+                                url = url[:-1]
+
+                            # Ako URL ima višestruke :// (greška), popravi
+                            if '://' in url:
+                                # Proveri da li ima :// posle prvog
+                                parts_url = url.split('://')
+                                if len(parts_url) > 2:
+                                    # Spojimo nazad
+                                    url = parts_url[0] + '://' + '://'.join(parts_url[1:])
+
+                    # === 6. UZIMANJE IMENA IZ #DESCRIPTION ===
                     if i + 1 < len(lines) and lines[i + 1].startswith("#DESCRIPTION"):
                         desc_line = lines[i + 1]
                         name = desc_line[13:].strip()
                         try:
-                            name = unquote(name)
+                            name = urllib.parse.unquote(name)
                         except:
                             name = name.replace("%20", " ").replace("%2B", "+")
+                        # Ako ime počinje sa #, ukloni ga
+                        if name.startswith('#'):
+                            name = name[1:]
                         i += 1
 
-                    if url:
+                    # === 7. AKO JE IME JOŠ UVEK PRAZNO, IZVUCI IZ URL-A ===
+                    if not name or name == "Nepoznato" or name.strip() == "":
+                        if url:
+                            # Pokušaj izvući ime iz poslednjeg dela URL-a
+                            last_part = url.split('/')[-1]
+                            if last_part:
+                                # Ukloni parametre (sve posle ?)
+                                last_part = last_part.split('?')[0]
+                                # Dekodiraj
+                                last_part = urllib.parse.unquote(last_part)
+                                # Ukloni ekstenziju
+                                last_part = os.path.splitext(last_part)[0]
+                                # Zameni _ i - sa razmakom
+                                last_part = last_part.replace('_', ' ').replace('-', ' ')
+                                # Ukloni višestruke razmake
+                                last_part = re.sub(r'\s+', ' ', last_part).strip()
+                                if last_part:
+                                    name = last_part
+
+                    # === 8. DODATNO ČIŠĆENJE IMENA ===
+                    if name:
+                        # Ukloni višestruke razmake
+                        name = re.sub(r'\s+', ' ', name).strip()
+                        # Ako ime ima više od 100 karaktera, skrati
+                        if len(name) > 100:
+                            name = name[:97] + "..."
+
+                    # === 9. DODAJ SAMO AKO JE VALIDAN URL ===
+                    if url and (url.startswith("http://") or url.startswith("https://")):
+                        # Dodatna provera: ako URL i dalje sadrži % znakove, dekodiraj ih
+                        if '%' in url:
+                            url = urllib.parse.unquote(url)
+
                         self.current_online_items.append({
                             "name": name,
                             "path": url,
                             "type": "online",
                             "info": "IPTV"
                         })
+                        print(f"[DEBUG] Link #{len(self.current_online_items)}: {name}")
+                        print(f"[DEBUG] URL: {url[:100]}...")
 
                 i += 1
 
             if self.current_online_items:
                 self.displayOnlineList(display_name)
-                self["status"].setText(f"{len(self.current_online_items)} IPTV linkova učitano")
+                self["status"].setText(f"✅ Učitano {len(self.current_online_items)} linkova")
             else:
-                self.session.open(MessageBox, "Nema pronađenih video linkova u ovom buketu.", MessageBox.TYPE_WARNING)
-                self["status"].setText("No videos found")
+                # Debug: ispiši prvih nekoliko linija
+                print("[DEBUG] Prvih 5 linija fajla:")
+                for idx, line in enumerate(lines[:5]):
+                    print(f"  {idx}: {line[:150]}")
+
+                self.session.open(MessageBox,
+                                  "Nema pronađenih validnih linkova u buketu.\n\n"
+                                  "Proveri da li linije počinju sa #SERVICE 4097: i sadrže http",
+                                  MessageBox.TYPE_WARNING)
+                self["status"].setText("No valid links found")
 
         except Exception as e:
-            print("[CiefpVideoPlayer] ParseTVFile error:", e)
+            print("[CiefpVideoPlayer] ParseTVFile error:", str(e))
+            import traceback
+            traceback.print_exc()
             self.session.open(MessageBox, f"Greška pri parsiranju fajla:\n{str(e)}", MessageBox.TYPE_ERROR)
 
     def parseM3UFile(self, filepath, display_name):
