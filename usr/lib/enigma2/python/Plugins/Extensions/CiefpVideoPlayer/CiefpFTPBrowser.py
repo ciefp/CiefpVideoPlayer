@@ -18,7 +18,7 @@ PLACEHOLDER = os.path.join(PLUGIN_PATH, "background.png")
 class CiefpFTPBrowser(Screen):
     # Tvoj originalni skin
     skin = """
-    <screen name="CiefpFTPBrowser" position="0,0" size="1920,1080" title="Ciefp FTP Phone Browser" backgroundColor="#00240e" flags="wfNoBorder">
+    <screen name="CiefpFTPBrowser" position="center,center" size="1920,1080" title="Ciefp FTP Phone Browser" backgroundColor="#00240e" flags="wfNoBorder">
         <eLabel position="0,0" size="1920,100" backgroundColor="#1a1a1a" zPosition="-1" />
         <widget source="Title" render="Label" position="70,45" size="1000,60" font="Regular;40" foregroundColor="#ffffff" backgroundColor="#101010" transparent="1" />
         <widget name="status" position="70,950" size="1000,50" font="Regular;28" foregroundColor="#f0f0f0" backgroundColor="#101010" transparent="1" halign="left" />

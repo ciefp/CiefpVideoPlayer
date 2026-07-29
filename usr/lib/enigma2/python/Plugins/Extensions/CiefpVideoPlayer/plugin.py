@@ -34,7 +34,7 @@ from .WebcamPlayer import WebcamPlayer
 
 # Putanje
 PLUGIN_NAME = "CiefpVideoPlayer"
-PLUGIN_VERSION = "1.7"
+PLUGIN_VERSION = "1.8"
 PLUGIN_PATH = "/usr/lib/enigma2/python/Plugins/Extensions/CiefpVideoPlayer"
 PLACEHOLDER = os.path.join(PLUGIN_PATH, "background.png")
 GITHUB_URL = "https://github.com/ciefp/CiefpIPTV"
@@ -76,7 +76,7 @@ if not os.path.exists(CACHE_DIR):
 
 class CiefpVideoPlayerMain(Screen):
     skin = """
-        <screen position="0,0" size="1920,1080" title="CiefpVideoPlayer FHD" backgroundColor="#00240e" flags="wfNoBorder">
+        <screen position="center,center" size="1920,1080" title="CiefpVideoPlayer FHD" backgroundColor="#00240e" flags="wfNoBorder">
             <eLabel position="0,0" size="1920,100" backgroundColor="#1a1a1a" zPosition="-1" />
             <eLabel text="..:: CiefpVideoPlayer ::.." position="60,25" size="600,50" font="Regular;40" foregroundColor="#ffffff" backgroundColor="#1a1a1a" transparent="1" />
             <widget name="separator0" position="0,100" size="1920,3" backgroundColor="#d5fa02" zPosition="1" />  

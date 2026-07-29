@@ -21,7 +21,7 @@ PLACEHOLDER = os.path.join(PLUGIN_PATH, "background.png")
 
 class CiefpSettings(Screen):
     skin = """
-        <screen position="0,0" size="1920,1080" title="CiefpVideoPlayer Settings" backgroundColor="#00240e" flags="wfNoBorder">
+        <screen position="center,center" size="1920,1080" title="CiefpVideoPlayer Settings" backgroundColor="#00240e" flags="wfNoBorder">
             <eLabel position="0,0" size="1920,100" backgroundColor="#1a1a1a" zPosition="-1" />
             <eLabel text="..:: CiefpVideoPlayer Settings ::.." position="60,25" size="600,50" font="Regular;40" foregroundColor="#ffffff" backgroundColor="#1a1a1a" transparent="1" />
             

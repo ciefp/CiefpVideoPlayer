@@ -31,7 +31,7 @@ class WebcamPlaylistPlayer(Screen):
         alpha_hex = self.get_mini_skin_opacity()
         
         self.skin = f"""
-        <screen position="0,0" size="1920,160" title="CiefpVideoPlayer WebCam" backgroundColor="#ff000000" flags="wfNoBorder">
+        <screen position="center,0" size="1920,160" title="CiefpVideoPlayer WebCam" backgroundColor="#ff000000" flags="wfNoBorder">
             <eLabel position="0,0" size="1920,160" backgroundColor="#{alpha_hex}00000e" zPosition="1" />
             <eLabel text="NOW PLAYING:" position="50,20" size="180,40" font="Regular;22" foregroundColor="#ffffff" backgroundColor="#00000000" transparent="1" zPosition="2" />
             <widget name="title" position="240,15" size="1630,50" font="Regular;30" foregroundColor="#ffffff" backgroundColor="#{alpha_hex}00000e" transparent="1" zPosition="2" />
@@ -303,7 +303,7 @@ class WebcamPlayer(Screen):
     """Glavni ekran za pregled webcam buketa"""
     
     skin = """
-    <screen name="WebcamPlayer" position="0,0" size="1920,1080" title="Webcam Player" backgroundColor="#00240e" flags="wfNoBorder">
+    <screen name="WebcamPlayer" position="center,center" size="1920,1080" title="Webcam Player" backgroundColor="#00240e" flags="wfNoBorder">
         <eLabel position="0,0" size="1920,100" backgroundColor="#1a1a1a" zPosition="-1" />
         <eLabel text="..:: CiefpVideoPlayer ::.." position="60,25" size="600,50" font="Regular;40" foregroundColor="#ffffff" backgroundColor="#1a1a1a" transparent="1" />
         <widget name="webcam_list" position="60,150" size="1000,750" scrollbarMode="showOnDemand" itemHeight="50" font="Regular;32" foregroundColor="#ffffff" backgroundColor="#101010" transparent="1" />

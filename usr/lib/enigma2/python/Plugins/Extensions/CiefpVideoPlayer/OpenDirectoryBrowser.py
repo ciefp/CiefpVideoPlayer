@@ -34,7 +34,7 @@ def get_api_key():
 
 class OpenDirectoryBrowser(Screen):
     skin = """
-        <screen position="0,0" size="1920,1080" title="Open Directory Browser" backgroundColor="#00240e" flags="wfNoBorder">
+        <screen position="center,center" size="1920,1080" title="Open Directory Browser" backgroundColor="#00240e" flags="wfNoBorder">
             <widget name="background" position="1150,150" size="700,750" alphatest="blend" zPosition="1" />
 
             <eLabel position="0,0" size="1920,100" backgroundColor="#1a1a1a" zPosition="-1" />
