@@ -3,6 +3,7 @@ import os
 import json
 import shutil
 import urllib.request
+import ssl  # DODAJ OVO!
 from Screens.Screen import Screen
 from Screens.MessageBox import MessageBox
 from Screens.ChoiceBox import ChoiceBox
@@ -58,8 +59,10 @@ class CiefpSettings(Screen):
             ("TMDB API Key Setup", "api_key"),
             ("OMDb API Key Setup", "omdb_api_key"),
             ("Cache Settings", "cache"),
-            ("/tmp Limit Settings", "tmp_limit"),  # <-- DODAJ OVU LINIJU[cite: 2]
+            ("/tmp Limit Settings", "tmp_limit"),
             ("Language", "language"),
+            ("📤 Export API Keys to /etc/enigma2", "export_keys"),  # NOVO
+            ("📥 Import API Keys from /etc/enigma2", "import_keys"),  # NOVO
             ("About", "about"),
             ("Close", "close")
         ]
@@ -68,16 +71,32 @@ class CiefpSettings(Screen):
         self.onLayoutFinish.append(self.showDefaultImage)
 
     def load_settings(self):
-        """Učitava settings iz config.json"""
+        """Učitava settings iz config.json (prvo iz /etc/enigma2, pa iz plugin direktorijuma)"""
         default = {
             "tmdb_api_key": "",
+            "omdb_api_key": "",
             "cache_size_mb": 100,
-            "tmp_max_size_mb": 50,  # <-- DODAJ OVU LINIJU[cite: 2]
+            "tmp_max_size_mb": 50,
             "auto_clear_cache": False,
             "language": "en",
             "cache_dir": DEFAULT_CACHE_DIR
         }
 
+        # Prvo pokušaj iz /etc/enigma2
+        etc_config = "/etc/enigma2/ciefp_config.json"
+        if os.path.exists(etc_config):
+            try:
+                with open(etc_config, 'r') as f:
+                    settings = json.load(f)
+                    # Merge sa default
+                    for key in default:
+                        if key not in settings:
+                            settings[key] = default[key]
+                    return settings
+            except:
+                pass
+
+        # Ako nema u /etc/enigma2, pokušaj iz plugin direktorijuma
         if os.path.exists(CONFIG_FILE):
             try:
                 with open(CONFIG_FILE, 'r') as f:
@@ -90,11 +109,21 @@ class CiefpSettings(Screen):
             except:
                 return default
         return default
-    
+
     def save_settings(self):
-        """Čuva settings u config.json"""
+        """Čuva settings u config.json (u /etc/enigma2 ako postoji, inače u plugin direktorijumu)"""
+        # Prvo proveri da li postoji config u /etc/enigma2
+        etc_config = "/etc/enigma2/ciefp_config.json"
+        if os.path.exists(etc_config):
+            save_path = etc_config
+        else:
+            # Ako ne postoji, čuvaj u plugin direktorijumu
+            save_path = CONFIG_FILE
+            # Kreiraj direktorijum ako ne postoji
+            os.makedirs(os.path.dirname(save_path), exist_ok=True)
+
         try:
-            with open(CONFIG_FILE, 'w') as f:
+            with open(save_path, 'w') as f:
                 json.dump(self.settings, f, indent=4)
             return True
         except Exception as e:
@@ -137,10 +166,92 @@ class CiefpSettings(Screen):
                 self.tmp_limit_settings()
             elif action == "language":
                 self.language_settings()
+            elif action == "export_keys":  # NOVO
+                self.export_api_keys_to_etc()
+            elif action == "import_keys":  # NOVO
+                self.import_api_keys_from_etc()
             elif action == "about":
                 self.show_about()
             elif action == "close":
                 self.close()
+
+    def export_api_keys_to_etc(self):
+        """Eksportuje TMDB i OMDb API ključeve u /etc/enigma2/ciefp_api_keys.json"""
+        etc_config = "/etc/enigma2/ciefp_api_keys.json"
+
+        # Proveri da li ima ključeva za export
+        tmdb_key = self.settings.get('tmdb_api_key', '')
+        omdb_key = self.settings.get('omdb_api_key', '')
+
+        if not tmdb_key and not omdb_key:
+            self.session.open(MessageBox, "No API keys to export!\nPlease set at least one API key first.",
+                              MessageBox.TYPE_WARNING)
+            return
+
+        try:
+            # Kreiraj direktorijum ako ne postoji
+            os.makedirs("/etc/enigma2", exist_ok=True)
+
+            # Sačuvaj samo API ključeve
+            api_data = {
+                "tmdb_api_key": tmdb_key,
+                "omdb_api_key": omdb_key,
+                "exported_from": "CiefpVideoPlayer",
+                "export_date": __import__('time').strftime("%Y-%m-%d %H:%M:%S")
+            }
+
+            with open(etc_config, 'w') as f:
+                json.dump(api_data, f, indent=4)
+
+            self.session.open(MessageBox,
+                              f"✅ API keys exported successfully!\n\n"
+                              f"Location: /etc/enigma2/ciefp_api_keys.json\n"
+                              f"TMDB: {'✓ Set' if tmdb_key else '✗ Not set'}\n"
+                              f"OMDb: {'✓ Set' if omdb_key else '✗ Not set'}",
+                              MessageBox.TYPE_INFO)
+
+        except Exception as e:
+            self.session.open(MessageBox, f"❌ Export error:\n{str(e)}", MessageBox.TYPE_ERROR)
+
+    def import_api_keys_from_etc(self):
+        """Učitava API ključeve iz /etc/enigma2/ciefp_api_keys.json"""
+        etc_config = "/etc/enigma2/ciefp_api_keys.json"
+
+        if not os.path.exists(etc_config):
+            self.session.open(MessageBox,
+                              "No API keys file found in /etc/enigma2/\n\n"
+                              "Please export keys first or create:\n"
+                              "/etc/enigma2/ciefp_api_keys.json",
+                              MessageBox.TYPE_WARNING)
+            return
+
+        try:
+            with open(etc_config, 'r') as f:
+                api_data = json.load(f)
+
+            tmdb_key = api_data.get('tmdb_api_key', '')
+            omdb_key = api_data.get('omdb_api_key', '')
+
+            if not tmdb_key and not omdb_key:
+                self.session.open(MessageBox, "No API keys found in file!", MessageBox.TYPE_WARNING)
+                return
+
+            # Ažuriraj settings
+            if tmdb_key:
+                self.settings['tmdb_api_key'] = tmdb_key
+            if omdb_key:
+                self.settings['omdb_api_key'] = omdb_key
+
+            self.save_settings()
+
+            self.session.open(MessageBox,
+                              f"✅ API keys imported successfully!\n\n"
+                              f"TMDB: {'✓ Loaded' if tmdb_key else '✗ Not found'}\n"
+                              f"OMDb: {'✓ Loaded' if omdb_key else '✗ Not found'}",
+                              MessageBox.TYPE_INFO)
+
+        except Exception as e:
+            self.session.open(MessageBox, f"❌ Import error:\n{str(e)}", MessageBox.TYPE_ERROR)
 
     def omdb_api_key_setup(self):
         """OMDb API Key setup menu"""
@@ -201,16 +312,20 @@ class CiefpSettings(Screen):
         key_files = []
         for path in search_paths:
             if os.path.exists(path):
-                for f in os.listdir(path):
-                    if f.endswith(('.txt', '.key', '.api')) and ('omdb' in f.lower() or 'imdb' in f.lower()):
-                        key_files.append((f, os.path.join(path, f)))
+                try:
+                    for f in os.listdir(path):
+                        if f.endswith(('.txt', '.key', '.api')) and ('omdb' in f.lower() or 'imdb' in f.lower()):
+                            full_path = os.path.join(path, f)
+                            key_files.append((f"📄 {f}", full_path))  # Promenjeno: (display, value)
+                except:
+                    pass
 
         if key_files:
             self.session.openWithCallback(
                 self.load_selected_omdb_key_file,
                 ChoiceBox,
                 title="Select OMDb API Key File:",
-                list=key_files
+                list=key_files  # Sada šaljemo listu tuple-ova
             )
         else:
             self.session.openWithCallback(
@@ -222,7 +337,11 @@ class CiefpSettings(Screen):
 
     def load_selected_omdb_key_file(self, choice):
         if choice:
-            filepath = choice[1]
+            # choice je tuple (display, value) ili samo value
+            if isinstance(choice, tuple):
+                filepath = choice[1]  # Uzmi drugi element (putanja)
+            else:
+                filepath = choice
             self.read_omdb_api_key_from_file(filepath)
 
     def manual_omdb_key_file_path(self, filepath):

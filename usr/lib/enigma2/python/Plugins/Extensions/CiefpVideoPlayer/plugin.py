@@ -34,7 +34,7 @@ from .WebcamPlayer import WebcamPlayer
 
 # Putanje
 PLUGIN_NAME = "CiefpVideoPlayer"
-PLUGIN_VERSION = "1.8"
+PLUGIN_VERSION = "1.9"
 PLUGIN_PATH = "/usr/lib/enigma2/python/Plugins/Extensions/CiefpVideoPlayer"
 PLACEHOLDER = os.path.join(PLUGIN_PATH, "background.png")
 GITHUB_URL = "https://github.com/ciefp/CiefpIPTV"
@@ -47,12 +47,49 @@ NETWORK_MOUNT = "/media/network"
 CONFIG_FILE = "/usr/lib/enigma2/python/Plugins/Extensions/CiefpVideoPlayer/config.json"
 
 def get_api_key():
-    """Učitava API ključ iz config.json"""
+    """Učitava API ključ iz config.json (prvo iz /etc/enigma2, pa iz plugin direktorijuma)"""
+    # Prvo pokušaj iz /etc/enigma2
+    etc_config = "/etc/enigma2/ciefp_config.json"
+    if os.path.exists(etc_config):
+        try:
+            with open(etc_config, 'r') as f:
+                config = json.load(f)
+                key = config.get('tmdb_api_key', '')
+                if key:
+                    return key
+        except:
+            pass
+
+    # Ako nema u /etc/enigma2, pokušaj iz plugin direktorijuma
     if os.path.exists(CONFIG_FILE):
         try:
             with open(CONFIG_FILE, 'r') as f:
                 config = json.load(f)
                 return config.get('tmdb_api_key', '')
+        except:
+            pass
+    return ""
+
+def get_omdb_api_key():
+    """Učitava OMDb API ključ iz config.json (prvo iz /etc/enigma2, pa iz plugin direktorijuma)"""
+    # Prvo pokušaj iz /etc/enigma2
+    etc_config = "/etc/enigma2/ciefp_config.json"
+    if os.path.exists(etc_config):
+        try:
+            with open(etc_config, 'r') as f:
+                config = json.load(f)
+                key = config.get('omdb_api_key', '')
+                if key:
+                    return key
+        except:
+            pass
+
+    # Ako nema u /etc/enigma2, pokušaj iz plugin direktorijuma
+    if os.path.exists(CONFIG_FILE):
+        try:
+            with open(CONFIG_FILE, 'r') as f:
+                config = json.load(f)
+                return config.get('omdb_api_key', '')
         except:
             pass
     return ""
@@ -120,8 +157,6 @@ class CiefpVideoPlayerMain(Screen):
         # Separatori
         self["separator0"] = Label()
         self["separator1"] = Label()
-        self["separator2"] = Label()
-        self["separator3"] = Label()
 
         self["actions"] = ActionMap(["OkCancelActions", "ColorActions", "DirectionActions", "MenuActions"], {
             "ok": self.handleOk,
